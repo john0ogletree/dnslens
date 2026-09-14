@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>Privacy DNS Checker · Cloudflare DoH · Wildcard-Aware · Universal</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0b0f15;--surface:#141a24;--border:#253040;--text:#e8edf5;--text-dim:#8e9eb5;
+    --accent:#f6821f;--accent-glow:#3d2008;--success:#2ecc71;--warn:#f1c40f;--error:#e74c3c;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:'SF Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  }
+  body{background:var(--bg);color:var(--text);font-family:var(--font);display:flex;justify-content:center;min-height:100vh;padding:1.5rem 1rem;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .app{width:100%;max-width:880px;display:flex;flex-direction:column;gap:1.25rem}
+  .header{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+  .header h1{font-size:1.6rem;font-weight:600;letter-spacing:-.02em;background:linear-gradient(135deg,#fff 0%,#f6821f 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .badge{font-size:.7rem;font-weight:500;background:var(--accent-glow);color:#f6a95e;padding:.25rem .65rem;border-radius:999px;border:1px solid #6b3a12;letter-spacing:.3px}
+  .privacy-note{font-size:.8rem;color:var(--text-dim);display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;background:#0f1620;border-radius:8px;border:1px solid var(--border)}
+  .privacy-note svg{flex-shrink:0;opacity:.7}
+  .search-card{background:var(--surface);border-radius:20px;padding:1.5rem 1.25rem;border:1px solid var(--border);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  .input-group{display:flex;flex-direction:column;gap:.9rem}
+  @media(min-width:500px){.input-group{flex-direction:row;align-items:center}.input-group .field{flex:1}}
+  .field{position:relative;display:flex;align-items:center;background:#0b1119;border-radius:14px;border:1px solid var(--border);transition:border-color .15s,box-shadow .15s}
+  .field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(246,130,31,.15)}
+  .field input{width:100%;background:transparent;border:none;outline:none;color:var(--text);font-size:1rem;padding:.85rem 1rem;font-family:var(--mono);letter-spacing:.2px}
+  .field input::placeholder{color:#4a5c72;font-family:var(--font);letter-spacing:normal}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:14px;font-weight:600;font-size:.95rem;padding:.85rem 2rem;cursor:pointer;transition:background .15s,transform .1s,box-shadow .15s;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:.5rem;letter-spacing:.2px;box-shadow:0 4px 14px rgba(246,130,31,.3)}
+  .btn:hover{background:#e0700f;box-shadow:0 6px 18px rgba(246,130,31,.4)}
+  .btn:active{transform:scale(.97)}
+  .btn:disabled{opacity:.5;pointer-events:none;box-shadow:none}
+  .options-row{display:flex;align-items:center;justify-content:space-between;margin-top:1rem;flex-wrap:wrap;gap:.75rem}
+  .toggle{display:flex;align-items:center;gap:.6rem;cursor:pointer;user-select:none;font-size:.9rem;color:var(--text-dim);transition:color .15s}
+  .toggle:hover{color:var(--text)}
+  .toggle input{display:none}
+  .toggle-track{width:42px;height:24px;background:#1f2a3a;border-radius:999px;position:relative;transition:background .2s;border:1px solid #2a3a4e;flex-shrink:0}
+  .toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;background:#6b7f99;border-radius:50%;transition:transform .2s,background .2s}
+  .toggle input:checked + .toggle-track{background:var(--accent-glow);border-color:#6b3a12}
+  .toggle input:checked + .toggle-track::after{transform:translateX(18px);background:var(--accent)}
+  .status{display:flex;align-items:center;gap:.75rem;padding:1rem .25rem .25rem;font-size:.9rem;color:var(--text-dim);min-height:2.5rem}
+  .spinner{width:18px;height:18px;border:2px solid #2a3a4e;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .status.error{color:var(--error)}.status.success{color:var(--success)}
+  .results{display:flex;flex-direction:column;gap:1.2rem}
+  .section{background:var(--surface);border-radius:18px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.3)}
+  .section-header{padding:.9rem 1.25rem;background:#0f1620;border-bottom:1px solid var(--border);font-size:.85rem;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-dim);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem}
+  .section-header .resolver-badge{font-size:.7rem;background:#1a2635;padding:.2rem .6rem;border-radius:999px;border:1px solid #2a3a4e;color:#7a94b5;font-weight:500;text-transform:none;letter-spacing:.2px}
+  .section-header .count-badge{font-size:.7rem;background:#3d2008;padding:.2rem .6rem;border-radius:999px;border:1px solid #6b3a12;color:#f6a95e;font-weight:500;text-transform:none}
+  .section-header .false-badge{font-size:.7rem;background:#2a1f0a;padding:.2rem .6rem;border-radius:999px;border:1px solid #6b4f1a;color:#f1c40f;font-weight:500;text-transform:none}
+  .record-list{padding:.5rem 0;list-style:none}
+  .record-item{padding:.7rem 1.25rem;border-bottom:1px solid #1a2432;font-family:var(--mono);font-size:.85rem;display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline;transition:background .1s}
+  .record-item:last-child{border-bottom:none}
+  .record-item:hover{background:#1a212e}
+  .record-type{font-weight:600;font-size:.75rem;color:var(--accent);background:#3d2008;padding:.2rem .6rem;border-radius:6px;border:1px solid #6b3a12;min-width:55px;text-align:center;letter-spacing:.3px}
+  .record-value{word-break:break-all;color:#d0dceb;flex:1}
+  .record-ttl{color:#6b7f99;font-size:.75rem;margin-left:auto;white-space:nowrap}
+  .empty-records{padding:1.5rem 1.25rem;color:var(--text-dim);font-size:.9rem;font-style:italic}
+  .wildcard-badge{display:inline-flex;align-items:center;gap:.3rem;font-size:.7rem;background:#2a1f0a;color:#f1c40f;border:1px solid #6b4f1a;padding:.2rem .6rem;border-radius:999px;font-weight:500;letter-spacing:.3px}
+  .warning-list{list-style:none;padding:.75rem 1.25rem;font-size:.8rem;color:#cfb53b;background:#1a1f0a;border-bottom:1px solid #2a2a15}
+  .warning-list li{padding:.15rem 0;display:flex;gap:.5rem;align-items:flex-start}
+  .warning-list li::before{content:'⚠';flex-shrink:0;color:#f1c40f}
+  .sub-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.82rem}
+  .sub-table td{padding:.5rem 1.25rem;border-bottom:1px solid #1a2432}
+  .sub-table tr:last-child td{border-bottom:none}
+  .sub-table tr:hover{background:#1a212e}
+  .sub-source{font-size:.7rem;color:#6b7f99;text-align:right}
+  .wildcard-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.82rem}
+  .wildcard-table td{padding:.45rem 1.25rem;border-bottom:1px solid #1a2432;color:#8e9eb5}
+  .wildcard-table tr:last-child td{border-bottom:none}
+  .wildcard-table tr:hover{background:#1a212e}
+  .wildcard-table .ip{color:#f1c40f;text-align:right;font-size:.75rem}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:#2a3a4e;border-radius:4px}
+  ::-webkit-scrollbar-thumb:hover{background:#3a4e66}
+  .progress-bar{width:100%;height:2px;background:#1a2635;border-radius:2px;overflow:hidden;margin-top:.5rem}
+  .progress-fill{height:100%;background:var(--accent);width:0%;transition:width .2s}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>DNS Checker</h1>
+    <span class="badge">Cloudflare DoH · Wildcard-Aware · Universal</span>
+  </div>
+
+  <div class="privacy-note">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f6a95e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>
+    <span>All DNS queries go through Cloudflare DoH (1.1.1.1). Wildcard false positives filtered. Works for any domain.</span>
+  </div>
+
+  <div class="search-card">
+    <div class="input-group">
+      <div class="field">
+        <input type="text" id="domainInput" placeholder="example.com" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      </div>
+      <button class="btn" id="checkBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        Check
+      </button>
+    </div>
+
+    <div class="options-row">
+      <label class="toggle">
+        <input type="checkbox" id="wildcardToggle" checked>
+        <span class="toggle-track"></span>
+        <span>Filter wildcard false positives</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="subdomainToggle" checked>
+        <span class="toggle-track"></span>
+        <span>Subdomain enumeration</span>
+      </label>
+    </div>
+
+    <div class="status" id="status"><span>Ready — enter a domain to begin.</span></div>
+    <div class="progress-bar" id="progressBar" style="display:none;"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="results" id="results"></div>
+</div>
+
+<script>
+(function(){
+  // ---------------- config ----------------
+  const CLOUDFLARE_DOH = 'https://cloudflare-dns.com/dns-query';
+  const CLOUDFLARE_NAME = 'Cloudflare (1.1.1.1)';
+  const WILDCARD_BASELINE_PROBES = 5;
+
+  // ~600 general-purpose common subdomain labels (no domain-specific guesses)
+  const SUBDOMAIN_WORDLIST = [
+    // --- core web ---
+    'www','www1','www2','www3','web','web1','web2','web3','site','website','home',
+    'portal','my','start','launch','app','apps','application','applications',
+    'mobile','m','mobi','ios','android','webapp','webapps','ui','frontend',
+    'backend','service','services','microservice','microservices','server','servers',
+    // --- mail ---
+    'mail','mail1','mail2','webmail','smtp','smtp1','smtp2','pop','pop3','imap',
+    'mx','mx1','mx2','mx3','email','email1','mailer','newsletter','list','lists',
+    'mailgun','sendgrid','postmark','sparkpost','mandrill',
+    // --- file transfer / remote ---
+    'ftp','ftp1','ftp2','sftp','ftps','ssh','vpn','vpn1','vpn2','remote','rdp',
+    'gateway','gw','proxy','wpad','socks','tunnel','tunnels','jump','jumpbox',
+    'bastion','bastion1','bastion2',
+    // --- dns / network ---
+    'ns','ns1','ns2','ns3','ns4','ns5','dns','dns1','dns2','dns3','dns4',
+    'resolver','resolvers','recursor','recursive','authoritative','authns',
+    'router','switch','fw','firewall','ids','ips','load','lb','haproxy','nginx',
+    // --- api / integration ---
+    'api','api1','api2','api3','api-v1','api-v2','api-v3','apiv1','apiv2','apiv3',
+    'rest','graphql','gql','rpc','soap','json','xml','ws','wss','websocket',
+    'socket','sockets','webhook','webhooks','hook','hooks','callback','callbacks',
+    'integration','integrations','connector','connectors','plugin','plugins',
+    'oauth','oauth2','openid','oidc','sso','saml','auth','auth1','auth2',
+    'login','signin','signup','register','logout','session','sessions',
+    'accounts','account','user','users','profile','profiles','id','identity',
+    'token','tokens','keys','secrets','config','configuration','settings',
+    // --- environments ---
+    'dev','development','develop','devel','dev1','dev2','dev3','dev4','dev5',
+    'staging','stage','stg','stg1','stg2','stg3','preprod','pre-prod','preview',
+    'test','testing','tests','tst','qa','qa1','qa2','qa3','uat','uat1','uat2',
+    'prod','production','prod1','prod2','live','release','stable','nightly',
+    'canary','beta','alpha','rc','edge','next','new','old','legacy','archive',
+    'archived','bak','backup','backups','temp','tmp','sandbox','sbx','demo',
+    // --- cdn / static ---
+    'cdn','cdn1','cdn2','cdn3','cdn4','static','static1','static2','static3',
+    'assets','asset','media','img','images','image','image1','image2','pic',
+    'pics','photo','photos','gallery','files','file','download','downloads',
+    'dl','upload','uploads','up','video','videos','audio','music','stream',
+    'streams','live','tv','radio','podcast','podcasts','fonts','font','css',
+    'js','scripts','script','style','styles','theme','themes',
+    // --- admin / ops ---
+    'admin','administrator','adm','panel','cpanel','whm','webmin','manage',
+    'management','manager','console','dashboard','dash','control','controlpanel',
+    'cp','cms','status','health','healthcheck','healthz','monitor','monitoring',
+    'metrics','stats','stat','analytics','logs','log','logging','splunk',
+    'grafana','prometheus','kibana','alert','alerts','nagios','zabbix','sensu',
+    'uptime','ping','pingdom','datadog','newrelic','sentry','rollbar','bugsnag',
+    'graylog','fluentd','fluentbit','loki','tempo','jaeger','zipkin','otel',
+    // --- app / portal ---
+    'shop','store','stores','pay','payment','payments','billing','invoice',
+    'invoices','checkout','cart','orders','order','subscribe','subscription',
+    'subscriptions','plan','plans','pricing','price','prices','quote','quotes',
+    'blog','news','press','forum','forums','community','support','help',
+    'helpdesk','docs','doc','documentation','wiki','kb','knowledge','faq',
+    'guide','guides','chat','talk','meet','meeting','meetings','conference',
+    'conferences','webinar','webinars','event','events','calendar','cal',
+    'schedule','booking','bookings','reservation','reservations','appointment',
+    'appointments','search','find','lookup','query','queries','index','indices',
+    'catalog','catalogue','directory','dir',
+    // --- database / backend ---
+    'db','db1','db2','db3','db4','db5','database','databases','mysql','mariadb',
+    'postgres','postgresql','pg','pg1','oracle','mssql','sql','sql1','redis',
+    'redis1','mongo','mongodb','cassandra','couchdb','couchbase','neo4j',
+    'elastic','elasticsearch','es','es1','solr','kafka','rabbit','rabbitmq',
+    'amqp','mq','mqtt','memcache','memcached','cache','caches','ldap','ad',
+    'dc','dc1','dc2','etcd','consul','vault','zookeeper',
+    // --- dev tools ---
+    'git','gitlab','github','bitbucket','gitea','gogs','svn','mercurial',
+    'repo','repos','code','source','jenkins','ci','cd','build','builds',
+    'builder','runner','runners','artifact','artifacts','nexus','artifactory',
+    'registry','docker','registry1','harbor','quay','k8s','kubernetes','kube',
+    'swarm','rancher','openshift','argo','helm','flux','istio','linkerd',
+    'traefik','envoy','kong','apisix',
+    // --- AI / ML ---
+    'ai','ai1','ai2','ai3','gpt','llm','ml','models','model','inference',
+    'predict','predictions','vision','nlp','speech','tts','stt','embeddings',
+    'vector','vectors','search-ai','ai-api','ai-app','ai-demo','ai-dev',
+    'ai-staging','ai-prod','ai-test','ml-api','mlops','mlflow','kubeflow',
+    'sagemaker','vertex','bedrock',
+    // --- business / internal ---
+    'internal','intranet','extranet','corp','corporate','office','hq','branch',
+    'branch1','branch2','hr','humanresources','recruit','recruiting','jobs',
+    'careers','talent','finance','financial','accounting','accounts-payable',
+    'ap','ar','sales','marketing','crm','erp','sap','netsuite','salesforce',
+    'hubspot','zoho','pipedrive','legal','compliance','security','sec',
+    'infosec','soc','noc','it','itsm','servicedesk','service-desk','helpdesk',
+    'hrms','payroll','expense','expenses','travel','procurement',
+    // --- regions / geo ---
+    'us','us1','us2','us3','usa','eu','eu1','eu2','eu3','europe','uk','gb',
+    'de','fr','es','it','nl','be','ch','at','se','no','dk','fi','pl','cz',
+    'ru','ua','tr','il','in','asia','apac','jp','kr','cn','sg','hk','tw',
+    'au','nz','ca','mx','br','ar','cl','east','west','north','south',
+    'central','eastus','westus','eu-west','eu-east','eu-central','us-east',
+    'us-west','us-central','ap-south','ap-north','ap-east','ap-southeast',
+    'ap-northeast','sa-east','ca-central','af-south','me-south',
+    // --- clustered / numbered ---
+    'app1','app2','app3','app4','app5','app6','app7','app8','app9','app10',
+    'server1','server2','server3','server4','server5','server6','node1',
+    'node2','node3','node4','node5','node6','node7','node8','node9','node10',
+    'web1','web2','web3','web4','web5','web6','web7','web8','web9','web10',
+    'db1','db2','db3','db4','db5','db6','db7','db8','db9','db10',
+    'cache1','cache2','cache3','cache4','cache5','worker1','worker2',
+    'worker3','worker4','worker5','queue1','queue2','queue3',
+    // --- cloud provider names ---
+    'aws','azure','gcp','gcloud','k8s-master','k8s-node','k8s-worker','eks',
+    'aks','gke','fargate','lambda','cloudfront','cloudflare','cf','fastly',
+    'akamai','stackpath','bunny','bunnycdn','keycdn','cloudinary','imgix',
+    's3','bucket','buckets','storage','blob','blobs','object','objects',
+    'files1','files2','minio','ceph','glusterfs',
+    // --- misc common ---
+    'hello','hi','welcome','about','contact','info','support1','ask','request',
+    'requests','help1','care','feedback','survey','surveys','form','forms',
+    'foo','bar','baz','qux','test1','test2','test3','test4','test5','sample',
+    'samples','example','examples','dummy','dummies','mock','mocks','stub',
+    'stubs','fake','fakes','trial','trials','try','poc','pocs','prototype',
+    'prototypes','experimental','lab','labs','playground','play',
+    'game','games','gaming','arcade','contest','competition','rank','ranking',
+    'leaderboard','score','scores','stats1','statistics',
+    // --- more app patterns ---
+    'account1','user1','users1','member','members','customer','customers',
+    'client','clients','partner','partners','vendor','vendors','supplier',
+    'suppliers','ticket','tickets','ticket1','case','cases','issue','issues',
+    'bug','bugs','bugtracker','tracker','jira','confluence','notion','asana',
+    'trello','basecamp','monday','clickup','linear','shortcut','pivotal',
+    'slack','teams','discord','zoom','meet1','meet2','meet3','meet4',
+    'webex','gotomeeting','bluejeans','whereby','jitsi','bigbluebutton',
+    // --- monitoring extras ---
+    'elk','efk','splunk1','splunk2','splunk3','sumologic','papertrail',
+    'loggly','logentries','logstash','filebeat','metricbeat','heartbeat',
+    'auditbeat','packetbeat','vector','telegraf','collectd','statsd',
+    'graphite','influx','influxdb','victoriametrics','thanos','cortex',
+    // --- misc infra ---
+    'cron','scheduler','schedulers','worker-pool','taskqueue','task-queue',
+    'bus','eventbus','event-bus','event','events','stream-processor',
+    'etl','elt','airflow','prefect','dagster','luigi','nifi','spark','flink',
+    'hadoop','hive','presto','trino','dremio','databricks','snowflake',
+    'redshift','bigquery','athena','glue','emr',
+    // --- payments / fintech ---
+    'stripe','paypal','braintree','adyen','square','checkout1','checkout2',
+    'billing1','billing2','invoicing','payment-gateway','payment-gw',
+    'gateway-payment','pgw','merchant','merchants','payouts','payout',
+    'refund','refunds','dispute','disputes','chargeback','chargebacks',
+    // --- misc ---
+    'donate','donation','donations','fund','funds','funding','crowdfund',
+    'crowdfunding','patreon','subscribe1','membership','memberships',
+    'premium','vip','pro','plus','gold','silver','bronze','platinum',
+    'beta1','beta2','alpha1','alpha2','preview1','preview2','preview3',
+    'sandbox1','sandbox2','sandbox3','demo1','demo2','demo3','demo4',
+    'internal-api','internal-app','external-api','public-api','private-api',
+    'admin-api','user-api','partner-api','vendor-api','client-api',
+    'dev-api','api-dev','api-staging','api-prod','api-test','test-api',
+    'prod-api','staging-api','internal-tools','tools','toolbox','utils',
+    'utility','utilities','helper','helpers','service1','service2','service3'
+  ];
+
+  // ---------------- state ----------------
+  const domainInput      = document.getElementById('domainInput');
+  const checkBtn         = document.getElementById('checkBtn');
+  const wildcardToggle   = document.getElementById('wildcardToggle');
+  const subdomainToggle  = document.getElementById('subdomainToggle');
+  const statusEl         = document.getElementById('status');
+  const resultsEl        = document.getElementById('results');
+  const progressBar      = document.getElementById('progressBar');
+  const progressFill     = document.getElementById('progressFill');
+
+  // ---------------- helpers ----------------
+  function setStatus(msg, type='info', spinner=false){
+    statusEl.innerHTML = '';
+    if(spinner){
+      const sp = document.createElement('div');
+      sp.className='spinner';
+      statusEl.appendChild(sp);
+    }
+    const s = document.createElement('span');
+    s.textContent = msg;
+    statusEl.appendChild(s);
+    statusEl.className = 'status';
+    if(type==='error') statusEl.classList.add('error');
+    if(type==='success') statusEl.classList.add('success');
+  }
+
+  function setProgress(pct){
+    progressBar.style.display = pct>0 && pct<100 ? 'block' : 'none';
+    progressFill.style.width = pct + '%';
+  }
+
+  function clearResults(){ resultsEl.innerHTML=''; }
+
+  function isValidDomain(d){
+    if(!d || typeof d!=='string') return false;
+    d = d.trim().toLowerCase();
+    if(d.length===0 || d.length>253) return false;
+    if(d.startsWith('*.')) return isValidDomain(d.slice(2));
+    const re = /^(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+    return re.test(d);
+  }
+
+  function cleanDomain(input){
+    let d = input.trim().toLowerCase();
+    d = d.replace(/^https?:\/\//,'');
+    d = d.replace(/\/.*$/,'');
+    d = d.replace(/^\*\./,'');
+    if(d.endsWith('.')) d = d.slice(0,-1);
+    return d;
+  }
+
+  function escapeHtml(t){
+    if(!t) return '';
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  }
+
+  // ---------------- DNS wire format ----------------
+  const TYPE_MAP = {A:1, AAAA:28, CNAME:5, TXT:16, MX:15, NS:2, SOA:6, CAA:257, PTR:12, SRV:33};
+
+  function buildDnsQuery(domain, type){
+    const qtype = TYPE_MAP[type] || 1;
+    const buf = new Uint8Array(512);
+    const view = new DataView(buf.buffer);
+    view.setUint16(0,0);
+    view.setUint16(2,0x0100);
+    view.setUint16(4,1);
+    let off = 12;
+    for(const part of domain.split('.')){
+      if(!part) continue;
+      const len = part.length;
+      if(len>63) throw new Error('label too long');
+      view.setUint8(off,len); off++;
+      for(let i=0;i<len;i++) view.setUint8(off+i, part.charCodeAt(i));
+      off += len;
+    }
+    view.setUint8(off,0); off++;
+    view.setUint16(off,qtype); off+=2;
+    view.setUint16(off,1); off+=2;
+    return buf.slice(0,off);
+  }
+
+  function parseDnsResponse(buffer){
+    if(buffer.byteLength<12) throw new Error('short response');
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const flags = view.getUint16(2);
+    const rcode = flags & 0x000F;
+    if(rcode!==0){
+      const m = {1:'Format error',2:'Server failure',3:'NXDOMAIN',4:'Not implemented',5:'Refused'};
+      throw new Error(m[rcode] || `DNS error ${rcode}`);
+    }
+    const qdcount=view.getUint16(4), ancount=view.getUint16(6),
+          nscount=view.getUint16(8), arcount=view.getUint16(10);
+    let off=12;
+
+    function parseName(o){
+      const parts=[]; let jumped=false, jumps=0, retOff;
+      while(o<buffer.byteLength && jumps<50){
+        const len=view.getUint8(o);
+        if(len===0){o++;break;}
+        if((len&0xC0)===0xC0){
+          if(!jumped) retOff=o+2;
+          jumped=true; jumps++;
+          o = ((len&0x3F)<<8)|view.getUint8(o+1);
+          continue;
+        }
+        parts.push(new TextDecoder().decode(buffer.slice(o+1,o+1+len)));
+        o += 1+len;
+      }
+      if(jumped && retOff!==undefined) o=retOff;
+      return {name:parts.join('.'), nextOffset:o};
+    }
+
+    for(let i=0;i<qdcount;i++){
+      const r=parseName(off); off=r.nextOffset+4;
+    }
+
+    const records=[];
+    const total = ancount+nscount+arcount;
+    for(let i=0;i<total && off<buffer.byteLength;i++){
+      const nr = parseName(off);
+      const name = nr.name; off = nr.nextOffset;
+      if(off+10>buffer.byteLength) break;
+      const rtype = view.getUint16(off);
+      const rclass= view.getUint16(off+2);
+      const ttl   = view.getUint32(off+4);
+      const rdlen = view.getUint16(off+8);
+      off += 10;
+      if(off+rdlen>buffer.byteLength) break;
+      const rd = buffer.slice(off,off+rdlen);
+      let rdata='';
+
+      if(rtype===1 && rdlen===4) rdata=`${rd[0]}.${rd[1]}.${rd[2]}.${rd[3]}`;
+      else if(rtype===28 && rdlen===16){
+        const p=[];
+        for(let j=0;j<16;j+=2) p.push(((rd[j]<<8)|rd[j+1]).toString(16));
+        rdata = p.join(':');
+      }
+      else if(rtype===5 || rtype===2){
+        try{ rdata = parseName(off).name; }catch(e){ rdata='[name]'; }
+      }
+      else if(rtype===16){
+        let p=0, parts=[];
+        while(p<rd.length){
+          const l=rd[p]; if(l===0){p++;continue;}
+          parts.push(new TextDecoder().decode(rd.slice(p+1,p+1+l)));
+          p += 1+l;
+        }
+        rdata = parts.join(' ');
+      }
+      else if(rtype===15){
+        if(rd.length>=3){
+          const pref=(rd[0]<<8)|rd[1];
+          try{ rdata = pref+' '+parseName(off+2).name; }catch(e){ rdata=String(pref); }
+        }
+      }
+      else if(rtype===257){
+        if(rd.length>=2){
+          const tl=rd[1];
+          if(tl+2<=rd.length){
+            const tag=new TextDecoder().decode(rd.slice(2,2+tl));
+            const val=new TextDecoder().decode(rd.slice(2+tl));
+            rdata = `${rd[0]} ${tag} "${val}"`;
+          }
+        }
+      }
+      else rdata = Array.from(rd).map(b=>b.toString(16).padStart(2,'0')).join('');
+
+      const show = [1,28,5,16,15,2,257];
+      if(show.includes(rtype) && rclass===1){
+        const typeStr = {1:'A',28:'AAAA',5:'CNAME',16:'TXT',15:'MX',2:'NS',257:'CAA'}[rtype] || `T${rtype}`;
+        records.push({name, type:typeStr, ttl, value:rdata, rtype});
+      }
+      off += rdlen;
+    }
+    return records;
+  }
+
+  async function dohQuery(domain, type, timeoutMs=6000){
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), timeoutMs);
+    try{
+      const q = buildDnsQuery(domain, type);
+      const res = await fetch(CLOUDFLARE_DOH,{
+        method:'POST',
+        headers:{'Content-Type':'application/dns-message','Accept':'application/dns-message'},
+        body:q, signal:controller.signal
+      });
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ab = await res.arrayBuffer();
+      return parseDnsResponse(new Uint8Array(ab));
+    } finally { clearTimeout(timer); }
+  }
+
+  // ---------------- wildcard baseline ----------------
+  async function getWildcardBaseline(domain){
+    const ips = new Set();
+    const probes = [];
+    for(let i=0;i<WILDCARD_BASELINE_PROBES;i++){
+      const label = `zz-wc-${Math.random().toString(36).slice(2,12)}-${i}`;
+      probes.push((async ()=>{
+        try{
+          const recs = await dohQuery(`${label}.${domain}`, 'A', 4000);
+          recs.filter(r=>r.type==='A').forEach(r=>ips.add(r.value));
+        }catch(e){ /* NXDOMAIN = no wildcard */ }
+      })());
+    }
+    await Promise.all(probes);
+    return ips;
+  }
+
+  // ---------------- subdomain enumeration ----------------
+
+  // Source 1: crt.sh (Certificate Transparency)
+  async function fetchFromCrtSh(domain){
+    try{
+      const url = `https://crt.sh/?q=%25.${encodeURIComponent(domain)}&output=json`;
+      const controller = new AbortController();
+      const timer = setTimeout(()=>controller.abort(), 15000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if(!res.ok){
+        return { ok:false, error:`crt.sh HTTP ${res.status} (possibly rate-limited)` };
+      }
+      const data = await res.json();
+      const names = new Set();
+      for(const entry of data){
+        const nv = (entry.name_value || '').toLowerCase();
+        for(const line of nv.split('\n')){
+          const n = line.trim().replace(/^\*\./,'');
+          if(n.endsWith('.'+domain) && n!==domain && !n.includes('*')){
+            names.add(n);
+          }
+        }
+      }
+      return { ok:true, data: Array.from(names) };
+    }catch(e){
+      return { ok:false, error:`crt.sh failed: ${e.message}` };
+    }
+  }
+
+  // Source 2: Cloudflare DoH brute-force with wildcard filtering
+  async function probeSubdomains(domain, wordlist, wildcardIps, onProgress){
+    const confirmed = new Map();
+    const suspect   = new Map();
+    let done = 0;
+    const batchSize = 25;
+    let anyError = null;
+
+    for(let i=0;i<wordlist.length;i+=batchSize){
+      const batch = wordlist.slice(i, i+batchSize);
+      await Promise.all(batch.map(async label=>{
+        const fqdn = `${label}.${domain}`;
+        try{
+          const recs = await dohQuery(fqdn, 'A', 3500);
+          const aRecords = recs.filter(r=>r.type==='A');
+          if(aRecords.length === 0) return;
+
+          const allMatch = wildcardIps.size > 0 &&
+                           aRecords.every(r => wildcardIps.has(r.value));
+          const entry = {type:'A', value:aRecords.map(r=>r.value).join(', '), ttl:aRecords[0].ttl};
+
+          if(allMatch){
+            suspect.set(fqdn, entry);
+          } else {
+            confirmed.set(fqdn, entry);
+          }
+        }catch(e){
+          if(e.message && e.message.includes('NXDOMAIN')) return;
+          anyError = e.message;
+        }
+      }));
+      done += batch.length;
+      if(onProgress) onProgress(done / wordlist.length);
+    }
+    return {
+      ok:true,
+      confirmed: Array.from(confirmed.keys()),
+      suspect: Array.from(suspect.keys()),
+      error: anyError
+    };
+  }
+
+  // ---------------- rendering ----------------
+  function renderRecordSection(title, records, resolverName, extraBadge){
+    const section = document.createElement('div');
+    section.className='section';
+    const h = document.createElement('div');
+    h.className='section-header';
+    h.innerHTML = `<span>${escapeHtml(title)}</span>
+      <span style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;">
+        ${extraBadge ? `<span class="count-badge">${extraBadge}</span>` : ''}
+        <span class="resolver-badge">${escapeHtml(resolverName)}</span>
+      </span>`;
+    section.appendChild(h);
+
+    if(!records || records.length===0){
+      const e=document.createElement('div');
+      e.className='empty-records';
+      e.textContent='No records returned.';
+      section.appendChild(e);
+    }else{
+      const ul=document.createElement('ul');
+      ul.className='record-list';
+      records.forEach(r=>{
+        const li=document.createElement('li');
+        li.className='record-item';
+        li.innerHTML = `<span class="record-type">${r.type}</span>
+          <span class="record-value">${escapeHtml(r.value)}</span>
+          <span class="record-ttl">TTL ${r.ttl}s</span>`;
+        ul.appendChild(li);
+      });
+      section.appendChild(ul);
+    }
+    return section;
+  }
+
+  function renderSubdomainSection(confirmed, suspect, sources, wildcardIps){
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '1.2rem';
+
+    // confirmed section
+    const section = document.createElement('div');
+    section.className='section';
+    const h = document.createElement('div');
+    h.className='section-header';
+    h.innerHTML = `<span>Confirmed Subdomains</span>
+      <span class="count-badge">${confirmed.length} real</span>`;
+    section.appendChild(h);
+
+    if(confirmed.length===0){
+      const e=document.createElement('div');
+      e.className='empty-records';
+      e.textContent = suspect.length > 0
+        ? 'All resolved names matched the wildcard baseline — none are confirmed real.'
+        : 'No confirmed subdomains found.';
+      section.appendChild(e);
+    } else {
+      const table = document.createElement('table');
+      table.className='sub-table';
+      confirmed.sort().forEach(sub=>{
+        const tr = document.createElement('tr');
+        const src = sources[sub] || '';
+        tr.innerHTML = `<td>${escapeHtml(sub)}</td><td class="sub-source">${escapeHtml(src)}</td>`;
+        table.appendChild(tr);
+      });
+      section.appendChild(table);
+    }
+    wrap.appendChild(section);
+
+    // suspect section (only if any)
+    if(suspect.length > 0){
+      const sec2 = document.createElement('div');
+      sec2.className='section';
+      const h2 = document.createElement('div');
+      h2.className='section-header';
+      h2.innerHTML = `<span>Wildcard Matches (likely false positives)</span>
+        <span class="false-badge">${suspect.length} suspects</span>`;
+      sec2.appendChild(h2);
+
+      const note = document.createElement('div');
+      note.style.padding = '.6rem 1.25rem';
+      note.style.fontSize = '.78rem';
+      note.style.color = '#8e9eb5';
+      note.style.borderBottom = '1px solid #1a2432';
+      note.innerHTML = `These names resolved to the wildcard baseline IPs: <span style="color:#f1c40f;">${
+        Array.from(wildcardIps).slice(0,4).join(', ') || '(none)'}</span>${
+        wildcardIps.size > 4 ? ` (+${wildcardIps.size-4} more)` : ''}.
+        They are probably NOT real records — just the wildcard catch-all answering.`;
+      sec2.appendChild(note);
+
+      const table = document.createElement('table');
+      table.className='wildcard-table';
+      suspect.sort().forEach(sub=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(sub)}</td><td class="ip">wildcard match</td>`;
+        table.appendChild(tr);
+      });
+      sec2.appendChild(table);
+      wrap.appendChild(sec2);
+    }
+
+    return wrap;
+  }
+
+  // ---------------- main flow ----------------
+  async function performCheck(){
+    const raw = domainInput.value.trim();
+    if(!raw){ setStatus('Please enter a domain.','error'); return; }
+    const domain = cleanDomain(raw);
+    if(!isValidDomain(domain)){ setStatus(`"${raw}" is not valid.`,'error'); return; }
+
+    checkBtn.disabled = true;
+    clearResults();
+    setProgress(0);
+    setStatus(`Starting checks for ${domain}…`,'info',true);
+
+    const doWildcard  = wildcardToggle.checked;
+    const doSubdomain = subdomainToggle.checked;
+    const warnings = [];
+
+    try{
+      // ---- Apex records ----
+      const recordTypes = ['A','AAAA','CNAME','TXT','MX','NS'];
+      const allRecords = [];
+      for(const t of recordTypes){
+        try{
+          const recs = await dohQuery(domain, t, 6000);
+          allRecords.push(...recs);
+        }catch(e){ /* type not present */ }
+      }
+      const seen = new Set();
+      const apexRecords = allRecords.filter(r=>{
+        const k = `${r.name}|${r.type}|${r.value}`;
+        if(seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+
+      // ---- Wildcard baseline ----
+      let wildcardIps = new Set();
+      if(doWildcard){
+        setStatus('Probing random labels to establish wildcard baseline…','info',true);
+        wildcardIps = await getWildcardBaseline(domain);
+      }
+
+      // ---- Subdomain enumeration ----
+      let confirmed = [];
+      let suspect   = [];
+      const sources = {};
+      let ctCount = 0, bruteConfirmed = 0, bruteSuspect = 0;
+
+      if(doSubdomain){
+        setStatus(`Querying CT logs + probing ${SUBDOMAIN_WORDLIST.length} names…`,'info',true);
+        setProgress(5);
+
+        const [crtResult, bruteResult] = await Promise.all([
+          fetchFromCrtSh(domain),
+          probeSubdomains(domain, SUBDOMAIN_WORDLIST, wildcardIps, (pct)=>{
+            setProgress(5 + pct*90);
+          })
+        ]);
+
+        if(crtResult.ok){
+          crtResult.data.forEach(n=>{ sources[n] = 'CT log (crt.sh)'; });
+          ctCount = crtResult.data.length;
+        } else {
+          warnings.push(crtResult.error);
+        }
+
+        if(bruteResult.ok){
+          bruteResult.confirmed.forEach(n=>{
+            if(!sources[n]) sources[n] = 'Cloudflare DoH (confirmed)';
+          });
+          bruteConfirmed = bruteResult.confirmed.length;
+          bruteSuspect   = bruteResult.suspect.length;
+          bruteResult.suspect.forEach(n=>{
+            if(!sources[n]) sources[n] = 'wildcard match';
+          });
+          if(bruteResult.error){
+            warnings.push(`DoH probe partial error: ${bruteResult.error}`);
+          }
+        } else {
+          warnings.push(bruteResult.error || 'DoH probe failed');
+        }
+
+        const all = new Set([...crtResult.data || [], ...bruteResult.confirmed || []]);
+        confirmed = Array.from(all);
+        suspect = Array.from(new Set(bruteResult.suspect || []));
+      }
+
+      setProgress(100);
+
+      // ---- Render ----
+      if(doWildcard){
+        const banner = document.createElement('div');
+        banner.className='section';
+        const hasWildcard = wildcardIps.size > 0;
+        banner.style.background = hasWildcard ? '#1a1f0a' : '#0f1620';
+        banner.style.borderColor = hasWildcard ? '#6b4f1a' : '#253040';
+        banner.innerHTML = `<div style="padding:.9rem 1.25rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+          <span class="wildcard-badge">${hasWildcard?'⚠️ WILDCARD ACTIVE':'✓ NO WILDCARD'}</span>
+          <span style="font-size:.85rem;color:${hasWildcard?'#f1c40f':'#8e9eb5'};">
+            ${hasWildcard
+              ? `Baseline IPs: ${Array.from(wildcardIps).slice(0,4).join(', ')}${wildcardIps.size>4?` (+${wildcardIps.size-4} more)`:''}. Names matching these are flagged as false positives.`
+              : 'Random labels did not resolve — no wildcard catch-all detected.'}
+          </span></div>`;
+        resultsEl.appendChild(banner);
+      }
+
+      resultsEl.appendChild(renderRecordSection(
+        `${domain} · apex records`, apexRecords, CLOUDFLARE_NAME,
+        apexRecords.length ? `${apexRecords.length} records` : null
+      ));
+
+      if(doSubdomain){
+        resultsEl.appendChild(renderSubdomainSection(confirmed, suspect, sources, wildcardIps));
+
+        const summary = document.createElement('div');
+        summary.className='section';
+        summary.innerHTML = `<div style="padding:.75rem 1.25rem;font-size:.85rem;color:#8e9eb5;">
+          <strong style="color:#f6a95e;">Sources:</strong>
+          crt.sh → ${ctCount} · DoH brute-force → ${bruteConfirmed} confirmed, ${bruteSuspect} wildcard-matched
+          ${warnings.length ? ` · <span style="color:#f1c40f;">${warnings.length} warning(s)</span>` : ''}
+        </div>`;
+        resultsEl.appendChild(summary);
+      }
+
+      const warnSuffix = warnings.length ? ` (${warnings.length} warning${warnings.length>1?'s':''})` : '';
+      setStatus(`Done — ${apexRecords.length} apex records, ${confirmed.length} confirmed subdomains${warnSuffix}.`,
+        warnings.length ? 'error' : 'success');
+    }catch(err){
+      setStatus(`Error: ${err.message}`,'error');
+    }finally{
+      checkBtn.disabled = false;
+      setProgress(0);
+    }
+  }
+
+  // ---------------- events ----------------
+  checkBtn.addEventListener('click', performCheck);
+  domainInput.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); performCheck(); }
+  });
+  domainInput.focus();
+})();
+</script>
+</body>
+</html>
